@@ -54,42 +54,18 @@ struct Node {
   Node() = default; 
 };
 
-// check if placing a queen is safe (i.e., check if all the queens already placed share
-// a same diagonal)
-//Modify nqueens.cpp to check an arbitrary list of inequalities. 
-//I slightly modify this function to take into account other constraints
-//          //current configuration         //row anc column where we have to evaluate
-
-
-/*
-__global__ void update_domains_cuda(bool *domains, int *parent_depth, int *starting_depth, int *j, Data *data ){
-
-  return;
-}
-*/
-//
-//now use cuda to parallelize this
-//update_domains(child.domains, parent.depth, child.depth, j, n, max_u, u, array_C);
+//this function updates the domains using OpenMP
+//each thread is in charge of one iteration of the loop
 void update_domains(std::vector<bool>& domains, int parent_depth, int starting_depth, int j, int n, int max_u, int* u, int* array_C){
 #pragma omp parallel for num_threads(4)  
   for(int i = starting_depth; i < n; i++){
-    if( array_C[i*n+j] == 1)
-      domains[i*n+j] = false;
+    if( array_C[i*max_u+j] == 1)
+      domains[i*max_u+j] = false;
   }
   return;
 }
 
-bool isSafe(/*const std::vector<int>& board, */const int row, const int col, Data data)
-{
-  if(data.get_C_at(row, col) == 1)
-    return false;
 
-  return true;
-}
-
-// evaluate a given node (i.e., check its board configuration) and branch it if it is valid
-// (i.e., generate its child nodes.)
-//              evaluate_and_branch(currentNode, pool, exploredTree, exploredSol, n, max_u, u, array_C);
 void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, int n, int max_u, int* u,  int* array_C)
 {
   int depth = parent.depth;
@@ -99,106 +75,22 @@ void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tre
   if (depth == N) {
     num_sol++;
   }
-  // if the given node is not a leaf, then update counter and evaluate/branch it
-  /*
-  else{
-    for (int j = depth; j < N; j++) {
-      if (isSafe(parent.board, depth, parent.board[j], data)) {
-        Node child(parent);
-        std::swap(child.board[depth], child.board[j]);
-        child.depth++;
-        pool.push(std::move(child));
-        tree_loc++;
-      }
-    }
-  }
-  */
-
+  // if the given node is not a leaf, then update counter and evaluate/branch if possible
   else{
     int upper_bound = u[depth];
     for(int j = 0; j < upper_bound; j++){
-      if(parent.domains[depth*max_u + j] == true){
-        //call update domains
+      if(parent.domains[depth*max_u + j] == true){ //if we can we create a child
         Node child(parent);
         child.depth++;
         tree_loc++;
-        update_domains(child.domains, parent.depth, child.depth, j, n, max_u, u, array_C);
-        //before call update_domains_cuda is necessary to transfer the necessary struct to the gpu
-
-        //child domains
-        /*
-        bool *child_domains_gpu; cudaMalloc(&child_domains_gpu, data.get_n() * data.get_max_u() * sizeof(bool)); cudaDeviceSynchronize();
-        cudaMemcpy(child_domains_gpu, &child.domains, data.get_n() * data.get_max_u() * sizeof(bool), cudaMemcpyHostToDevice); cudaDeviceSynchronize();
-
-        //parent.depth
-        int *parent_depth_gpu; cudaMalloc(&parent_depth_gpu, sizeof(int)); cudaDeviceSynchronize();
-        cudaMemcpy(parent_depth_gpu, &(parent.depth), sizeof(int), cudaMemcpyHostToDevice);cudaDeviceSynchronize();
-
-        //child.depth
-        int *child_depth_gpu; cudaMalloc(&child_depth_gpu, sizeof(int)); cudaDeviceSynchronize();
-        cudaMemcpy(child_depth_gpu, &(child.depth), sizeof(int), cudaMemcpyHostToDevice); cudaDeviceSynchronize();
-
-        //j (column)
-        int *j_gpu; cudaMalloc(&j_gpu, sizeof(int)); cudaDeviceSynchronize();
-        cudaMemcpy(j_gpu, &j, sizeof(int), cudaMemcpyHostToDevice); cudaDeviceSynchronize();
-
-        //data
-        Data *data_gpu; cudaMalloc(&data_gpu, sizeof(Data)); cudaDeviceSynchronize();
-        cudaMemcpy(data_gpu, &data, sizeof(Data), cudaMemcpyHostToDevice); cudaDeviceSynchronize();
-
-        //now we can call update_domains_cuda
-        //update_domains_cuda<<< 1, 2 >>>(child_domains_gpu, parent_depth_gpu, child_depth_gpu, j_gpu, data_gpu); 
-        
-        //and then copy back to CPU
-        //child domains //we just need to copy back what was actually modified
-        cudaMemcpy(&child.domains, child_domains_gpu, data.get_n() * data.get_max_u() * sizeof(bool), cudaMemcpyDeviceToHost); cudaDeviceSynchronize();
-        */
-
+        update_domains(child.domains, parent.depth, child.depth, j, n, max_u, u, array_C); //update of the domains of the child
         //finally we push the child into the stack
         pool.push(std::move(child));
       }
-      
-
     }
   }
-  /*
-  else {
-    for (auto it = parent.possible_places.begin(); it != parent.possible_places.end(); ) {
-      if (isSafe(depth, *it, data)) {
-          parent.possible_places.erase(it++);
-          parent.possible_places.erase(it++);
-          Node child(parent);
-          child.depth++;
-          pool.push(std::move(child));
-          tree_loc++;
-      }
-      else {
-        ++it;
-      }
-  }
 }
-*/
-  }
   
- /*
- //my version with backtracking
-  else{
-    for(int j = 0; j < parent.possible_places[depth].size(); j++){
-      if (parent.possible_places[depth][j] == -1) {
-        continue; // Skip invalid positions
-      }
-      Node child(parent); child.depth++; tree_loc++; pool.push(std::move(child));
-      if(depth + 1 != N){
-        for(int k = depth + 1; k < N; k++){
-          if(data.get_C_at(k, depth) == 1){
-            child.possible_places[k][j] = -1;
-
-          }
-        }
-      }
-  }
-}
-*/
 
 
 int main(int argc, char** argv) {
@@ -209,12 +101,7 @@ int main(int argc, char** argv) {
         data.print_u();
         data.print_C();
     }
-    
 
-  //test print
-  //inline int get_u_at(size_t i){return u[i];}
-  //std::cout << "u[0]:  " <<data.get_u_at(0) << std::endl;
-  //std::cout << "MAX:  " <<data.get_max_u() << std::endl;
   //get useful and constant information
   int* u = data.get_u();
   int n = data.get_n();
@@ -277,7 +164,7 @@ int main(int argc, char** argv) {
   // outputs
   std::cout << "Time taken: " << duration.count() << " milliseconds" << std::endl;
   std::cout << "Total solutions: " << exploredSol << std::endl;
-  std::cout << "Size of the explored tree: " << exploredTree << std::endl;
+  //std::cout << "Size of the explored tree: " << exploredTree << std::endl;
 
   return 0;
 }
