@@ -36,14 +36,16 @@ struct Node {
   std::vector<int> board; // board configuration (permutation)
   //Example of permutation with 4 queens: [2, 0, 3, 1] queen of the first row on the second column, and so on
   //std::set<int> possible_places;
-  std::vector<std::vector<bool>> domains;
+  std::vector<bool> domains;
 
   Node(size_t N, Data data): depth(0), board(N), domains(){
     for (int i = 0; i < N; i++) {
       board[i] = i;
-      domains.resize(N, std::vector<bool>(data.get_max_u(), true));
-      for(int j = 0; j < data.get_max_u(); j++)
-        domains[i][j] = true;
+      //domains.resize(N * std::vector<bool>(data.get_max_u(), true));
+      int max = data.get_max_u();
+      domains.resize(N * max);
+      for(int j = 0; j < max; j++)
+        domains[i*max+j] = true;
     }
   }
 
@@ -67,11 +69,12 @@ __global__ void update_domains_cuda(bool *domains, int *parent_depth, int *start
 */
 //
 //now use cuda to parallelize this
-void update_domains(std::vector<std::vector<bool>>& domains, int parent_depth, int starting_depth, int j, Data data){
+//update_domains(child.domains, parent.depth, child.depth, j, n, max_u, u, array_C);
+void update_domains(std::vector<bool>& domains, int parent_depth, int starting_depth, int j, int n, int max_u, int* u, int* array_C){
 #pragma omp parallel for num_threads(4)  
-  for(int i = starting_depth; i < data.get_n(); i++){
-    if(data.get_C_at(i, parent_depth) == 1)
-      domains[i][j] = false;
+  for(int i = starting_depth; i < n; i++){
+    if( array_C[i*n+j] == 1)
+      domains[i*n+j] = false;
   }
   return;
 }
@@ -86,7 +89,8 @@ bool isSafe(/*const std::vector<int>& board, */const int row, const int col, Dat
 
 // evaluate a given node (i.e., check its board configuration) and branch it if it is valid
 // (i.e., generate its child nodes.)
-void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, Data data)
+//              evaluate_and_branch(currentNode, pool, exploredTree, exploredSol, n, max_u, u, array_C);
+void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, int n, int max_u, int* u,  int* array_C)
 {
   int depth = parent.depth;
   int N = parent.board.size();
@@ -111,14 +115,14 @@ void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tre
   */
 
   else{
-    int upper_bound = data.get_u_at(depth);
+    int upper_bound = u[depth];
     for(int j = 0; j < upper_bound; j++){
-      if(parent.domains[depth][j] == true){
+      if(parent.domains[depth*max_u + j] == true){
         //call update domains
         Node child(parent);
         child.depth++;
         tree_loc++;
-        update_domains(child.domains, parent.depth, child.depth, j, data);
+        update_domains(child.domains, parent.depth, child.depth, j, n, max_u, u, array_C);
         //before call update_domains_cuda is necessary to transfer the necessary struct to the gpu
 
         //child domains
@@ -199,16 +203,37 @@ void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tre
 
 int main(int argc, char** argv) {
     Data data;
+    
     if (data.read_input("pco_3.txt")){
         data.print_n();
         data.print_u();
         data.print_C();
     }
+    
 
   //test print
   //inline int get_u_at(size_t i){return u[i];}
-  std::cout << "u[0]:  " <<data.get_u_at(0) << std::endl;
-  std::cout << "MAX:  " <<data.get_max_u() << std::endl;
+  //std::cout << "u[0]:  " <<data.get_u_at(0) << std::endl;
+  //std::cout << "MAX:  " <<data.get_max_u() << std::endl;
+  //get useful and constant information
+  int* u = data.get_u();
+  int n = data.get_n();
+  int max_u = data.get_max_u();
+  int** C = data.get_C(); //we retrieve the constraints matrix
+  int* array_C = (int*)malloc(n* n * sizeof(int)); // we allocate a 1D array
+  
+  int i, j;
+  for(i = 0; i < n; i++)
+    std::cout << u[i];
+  std::cout << endl;
+  std::cout << endl;
+  for(i = 0; i < n; i++){
+    for(j = 0; j < n; j++){
+      array_C[i * n + j] = C[i][j];
+      std ::cout<< array_C[i * n + j] << " ";
+    }
+    std::cout << endl;
+  }
 
   // helper
   if (argc != 2) {
@@ -240,7 +265,7 @@ int main(int argc, char** argv) {
     pool.pop();
 
     // check the board configuration of the node and branch it if it is valid.
-    evaluate_and_branch(currentNode, pool, exploredTree, exploredSol, data);
+    evaluate_and_branch(currentNode, pool, exploredTree, exploredSol, n, max_u, u, array_C);
 
 
   }
